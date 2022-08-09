@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -47,7 +46,7 @@ import (
 )
 
 func matchRegularExpressions(reader io.Reader, httpConfig config.HTTPProbe, logger log.Logger) bool {
-	body, err := ioutil.ReadAll(reader)
+	body, err := io.ReadAll(reader)
 	if err != nil {
 		level.Error(logger).Log("msg", "Error reading HTTP body", "err", err)
 		return false
@@ -282,7 +281,7 @@ func ProbeHTTP(ctx context.Context, target string, module config.Module, registr
 				Name: "probe_ssl_last_chain_info",
 				Help: "Contains SSL leaf certificate information",
 			},
-			[]string{"fingerprint_sha256"},
+			[]string{"fingerprint_sha256", "subject", "issuer", "subjectalternative"},
 		)
 
 		probeTLSVersion = prometheus.NewGaugeVec(
@@ -554,7 +553,7 @@ func ProbeHTTP(ctx context.Context, target string, module config.Module, registr
 		}
 
 		if !requestErrored {
-			_, err = io.Copy(ioutil.Discard, byteCounter)
+			_, err = io.Copy(io.Discard, byteCounter)
 			if err != nil {
 				level.Info(logger).Log("msg", "Failed to read HTTP response body", "err", err)
 				success = false
@@ -652,7 +651,7 @@ func ProbeHTTP(ctx context.Context, target string, module config.Module, registr
 		probeSSLEarliestCertExpiryGauge.Set(float64(getEarliestCertExpiry(resp.TLS).Unix()))
 		probeTLSVersion.WithLabelValues(getTLSVersion(resp.TLS)).Set(1)
 		probeSSLLastChainExpiryTimestampSeconds.Set(float64(getLastChainExpiry(resp.TLS).Unix()))
-		probeSSLLastInformation.WithLabelValues(getFingerprint(resp.TLS)).Set(1)
+		probeSSLLastInformation.WithLabelValues(getFingerprint(resp.TLS), getSubject(resp.TLS), getIssuer(resp.TLS), getDNSNames(resp.TLS)).Set(1)
 		if httpConfig.FailIfSSL {
 			level.Error(logger).Log("msg", "Final request was over SSL")
 			success = false
@@ -672,7 +671,7 @@ func ProbeHTTP(ctx context.Context, target string, module config.Module, registr
 func getDecompressionReader(algorithm string, origBody io.ReadCloser) (io.ReadCloser, error) {
 	switch strings.ToLower(algorithm) {
 	case "br":
-		return ioutil.NopCloser(brotli.NewReader(origBody)), nil
+		return io.NopCloser(brotli.NewReader(origBody)), nil
 
 	case "deflate":
 		return flate.NewReader(origBody), nil
